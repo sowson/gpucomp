@@ -78,7 +78,7 @@ void ex05_div_kernel_init(int gpui) {
             ex05_div_kernel = calloc(ngpu, sizeof(cl_kernel));
         }
         opencl_load_buffer(ex05_div_kernel_source, strlen(ex05_div_kernel_source),
-                           &ex05_div_kernel_program[d], ngpu, d);
+                           &ex05_div_kernel_program[d]);
         opencl_create_kernel(&ex05_div_kernel_program[d], "div_kernel",
                              &ex05_div_kernel[d]);
     }

@@ -78,7 +78,7 @@ void ex04_mul_kernel_init(int gpui) {
             ex04_mul_kernel = calloc(ngpu, sizeof(cl_kernel));
         }
         opencl_load_buffer(ex04_mul_kernel_source, strlen(ex04_mul_kernel_source),
-                           &ex04_mul_kernel_program[d], ngpu, d);
+                           &ex04_mul_kernel_program[d]);
         opencl_create_kernel(&ex04_mul_kernel_program[d], "mul_kernel",
                              &ex04_mul_kernel[d]);
     }

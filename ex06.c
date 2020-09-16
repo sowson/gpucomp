@@ -77,7 +77,7 @@ void ex06_free(network* net)
             if (!L.W) free(L.W);
         }
         opencl_free(L.Ng);
-        if (!L.W) free(L.N);
+        if (!L.N) free(L.N);
         L.w = 0;
         L.b = 0;
         L.n = 0;
@@ -133,7 +133,7 @@ void ex06_net_kernel_init(int gpui) {
             ex06_net_kernel = calloc(ngpu, sizeof(cl_kernel));
         }
         opencl_load_buffer(ex06_net_kernel_source, strlen(ex06_net_kernel_source),
-                           &ex06_net_kernel_program[d], ngpu, d);
+                           &ex06_net_kernel_program[d]);
         opencl_create_kernel(&ex06_net_kernel_program[d], "net_kernel",
                              &ex06_net_kernel[d]);
     }

@@ -1,27 +1,28 @@
+#define DARKNET_VERBOSE_GPU
+
+#include "opencl.h"
 #include <unistd.h>
 #include <assert.h>
+
+#ifndef GPU_INDEX
+#define GPU_INDEX
+int gpu_index = -1;
+#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <math.h>
-#include <stdio.h>
-#include "opencl.h"
 
-cl_int *cl_native_double_width_s;
-size_t *cl_native_max_group_size_s;
-size_t *cl_native_address_bits_s;
+int *gpusg;
+int ngpusg;
+
+__thread int opencl_device_id_t;
+__thread int opencl_device_ct_t;
 
 cl_context_properties* cl_props;
 
-char* concat(char *s1, char *s2)
-{
-    char *result = calloc(strlen(s1) + strlen(s2) + 1, sizeof(char));
-    strcpy(result, s1);
-    strcat(result, s2);
-    return result;
-}
-
-dim2 dim2_create(int x, int y)
+dim2 dim2_create(const int x, const int y)
 {
     dim2 ret;
 
@@ -31,124 +32,20 @@ dim2 dim2_create(int x, int y)
     return ret;
 }
 
-dim2 opencl_gridsize(int n)
+dim2 opencl_gridsize(const int n)
 {
     dim2 ret = dim2_create(n, 1);
 
     return ret;
 }
 
-void opencl_init(int *gpus, int ngpus)
+void opencl_set_device(int n)
 {
-    cl_native_double_width_s = calloc(ngpus, sizeof(int));
-    cl_native_max_group_size_s = calloc(ngpus, sizeof(int));
-    cl_native_address_bits_s = calloc(ngpus, sizeof(int));
-
-    cl_int clErr;
-
-    cl_platform_id clPlatform = 0;
-    cl_uint clNumPlatforms = 0;
-
-    cl_props = calloc(3, sizeof(cl_context_properties));
-    cl_props[0] = CL_CONTEXT_PLATFORM;
-    cl_props[1] = 0;
-    cl_props[2] = 0;
-
-    clErr = clGetPlatformIDs(CL_TRUE, &clPlatform, &clNumPlatforms);
-
-    if (clErr != CL_SUCCESS) {
-        printf("CL: opencl_init: Could not get platform IDs.\n");
-        return;
-    }
-
-    cl_uint num = 32;
-    cl_uint all = 0;
-    cl_device_id devices[num];
-    clErr = clGetDeviceIDs(clPlatform, CL_DEVICE_TYPE_ALL, num, devices, &all);
-
-    if (clErr != CL_SUCCESS) {
-        printf("CL: opencl_init: Could not get device IDs.\n");
-        return;
-    }
-
-    opencl_devices = (cl_device_id *) calloc((cl_uint)ngpus, sizeof(cl_device_id));
-
-    int i;
-    for(i = 0; i < ngpus; ++i)
-    {
-        opencl_devices[i] = devices[gpus[i]];
-    }
-
-    cl_props[1] = (cl_context_properties) clPlatform;
-
-    opencl_context = clCreateContext(cl_props, (cl_uint)ngpus,
-                                     opencl_devices, NULL, NULL, &clErr);
-
-    if (clErr != CL_SUCCESS) {
-        printf("CL: opencl_init: Could not create context.\n");
-        return;
-    }
-
-    opencl_queue = clCreateCommandQueue(opencl_context, *opencl_devices, CL_FALSE, &clErr);
-    if (clErr != CL_SUCCESS) {
-        printf("CL: opencl_init: Could not create queue.\n");
-        return;
-    }
-
-    printf("OpenCL Platform\n");
-    int d;
-    for (d = 0; d < ngpus; ++d) {
-        cl_native_double_width_s[d] = 0;
-        cl_native_max_group_size_s[d] = 0;
-        cl_native_address_bits_s[d] = 0;
-
-        clGetDeviceInfo(opencl_devices[d], CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE, sizeof(cl_uint), &cl_native_double_width_s[d], NULL);
-        clGetDeviceInfo(opencl_devices[d], CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &cl_native_max_group_size_s[d], NULL);
-        clGetDeviceInfo(opencl_devices[d], CL_DEVICE_ADDRESS_BITS, sizeof(size_t), &cl_native_address_bits_s[d], NULL);
-
-        size_t bufferSize = 2048;
-        char *buffer = (char *) calloc(bufferSize, sizeof(char));
-
-        printf("Device ID: %d\n", gpus[d]);
-        clGetDeviceInfo(opencl_devices[d], CL_DEVICE_NAME, bufferSize * sizeof(char), buffer, NULL);
-        printf("Device Name: %s\n", buffer);
-        clGetDeviceInfo(opencl_devices[d], CL_DEVICE_VENDOR, bufferSize * sizeof(char), buffer, NULL);
-        printf("Device Vendor: %s\n", buffer);
-        clGetDeviceInfo(opencl_devices[d], CL_DEVICE_VERSION, bufferSize * sizeof(char), buffer, NULL);
-        printf("Device OpenCL Availability: %s\n", buffer);
-        clGetDeviceInfo(opencl_devices[d], CL_DRIVER_VERSION, bufferSize * sizeof(char), buffer, NULL);
-        printf("Device OpenCL Used: %s\n", buffer);
-        printf("Device Double Precision: %s\n", cl_native_double_width_s[d] == 0 ? "NO" : "YES");
-        printf("Device Max Group Size: %zu\n", cl_native_max_group_size_s[d]);
-        printf("Device Address Bits: %zu\n", cl_native_address_bits_s[d]);
-        free(buffer);
-    }
-    printf("\n");
+    opencl_device_ct_t = ngpusg;
+    opencl_device_id_t = n;
 }
 
-void opencl_deinit(int *gpus, int ngpus)
-{
-    int a;
-    int d;
-    for (a = 0, d = ngpus-1; a < ngpus; --d, ++a) {
-        d = a;
-
-        clFinish(opencl_queue);
-        clReleaseCommandQueue(opencl_queue);
-    }
-
-    free(cl_props);
-    clReleaseContext(opencl_context);
-    opencl_context = 0;
-
-    free(opencl_devices);
-
-    free(cl_native_double_width_s);
-    free(cl_native_max_group_size_s);
-    free(cl_native_address_bits_s);
-}
-
-void opencl_load(char *fileName, cl_program *output, int ngpus, int gpui)
+void opencl_load(const char *fileName, cl_program *output)
 {
     FILE *fp;
     size_t lSize, readSize;
@@ -158,7 +55,7 @@ void opencl_load(char *fileName, cl_program *output, int ngpus, int gpui)
 
     if (fp == NULL)
     {
-        printf("CL: opencl_load: Could not open file: %s\n", fileName);
+        printf("opencl_load: Could not open file: %s\n", fileName);
         fclose(fp);
         return;
     }
@@ -172,7 +69,7 @@ void opencl_load(char *fileName, cl_program *output, int ngpus, int gpui)
 
     if (sourceBuffer == NULL)
     {
-        printf("CL: opencl_load: Could not allocate memory for file: %s\n",
+        printf("opencl_load: Could not allocate memory for file: %s\n",
                fileName);
         fclose(fp);
         return;
@@ -183,18 +80,27 @@ void opencl_load(char *fileName, cl_program *output, int ngpus, int gpui)
 
     if (readSize > lSize)
     {
-        printf("CL: opencl_load: failed to read file: %s\n", fileName);
+        printf("opencl_load: failed to read file: %s\n", fileName);
         free(sourceBuffer);
         return;
     }
 
-    opencl_load_buffer(sourceBuffer, readSize, output, ngpus, gpui);
+    opencl_load_buffer(sourceBuffer, readSize, output);
 
     free(sourceBuffer);
 }
 
-void opencl_load_buffer(const char *buffer, size_t size, cl_program *output, int ngpus, int gpui)
+char* concat(const char *s1, const char *s2)
 {
+    char *result = calloc(strlen(s1) + strlen(s2) + 1, sizeof(char));
+    strcpy(result, s1);
+    strcat(result, s2);
+    return result;
+}
+
+void opencl_load_buffer(const char *buffer, const size_t size, cl_program *output)
+{
+#ifdef ARM
     cl_int clErr;
 
     *output = clCreateProgramWithSource(opencl_context, CL_TRUE,
@@ -203,7 +109,7 @@ void opencl_load_buffer(const char *buffer, size_t size, cl_program *output, int
     if (clErr != CL_SUCCESS)
     {
         printf("opencl_load: could not create program. error: %s\n", clCheckError(clErr));
-        return;
+        exit(-1);
     }
 
     clErr = clBuildProgram(
@@ -217,15 +123,100 @@ void opencl_load_buffer(const char *buffer, size_t size, cl_program *output, int
         printf("opencl_load: could not compile. error: %s\n", clCheckError(clErr));
         size_t len;
         char *ebuffer = (char*)calloc(0x10000000, sizeof(char));
-        clGetProgramBuildInfo(*output, opencl_devices[0], CL_PROGRAM_BUILD_LOG, 0x10000000 * sizeof(char), ebuffer, &len);
+        clGetProgramBuildInfo(*output, opencl_devices[opencl_device_id_t], CL_PROGRAM_BUILD_LOG, 0x10000000 * sizeof(char), ebuffer, &len);
         printf("CL_PROGRAM_BUILD_LOG:\n%s\n", ebuffer);
         printf("CODE:\n%s\n", buffer);
         free(ebuffer);
-        exit(1);
+        exit(-1);
     }
+#else
+    cl_int clErr;
+
+    cl_program prhd = 0;
+
+    const char * code_header = "if CONFIG_USE_DOUBLE\n"
+                               "if defined(cl_khr_fp64)  // Khronos extension available?\n"
+                               "pragma OPENCL EXTENSION cl_khr_fp64 : enable\n"
+                               "define DOUBLE_SUPPORT_AVAILABLE\n"
+                               "elif defined(cl_amd_fp64)  // AMD extension available?\n"
+                               "pragma OPENCL EXTENSION cl_amd_fp64 : enable\n"
+                               "define DOUBLE_SUPPORT_AVAILABLE\n"
+                               "endif\n"
+                               "endif // CONFIG_USE_DOUBLE\n"
+                               "if defined(DOUBLE_SUPPORT_AVAILABLE)\n"
+                               "//#define float double\n"
+                               "else\n"
+                               "endif\n";
+
+    size_t headsz = strlen(code_header);
+
+    prhd = clCreateProgramWithSource(opencl_context, CL_TRUE,
+                                     (const char**)&code_header, &headsz, &clErr);
+
+    if (clErr != CL_SUCCESS)
+    {
+        printf("opencl_load: could not create header. error: %s\n", clCheckError(clErr));
+        exit(-1);
+    }
+
+    cl_program prog[1];
+
+    prog[0] = clCreateProgramWithSource(opencl_context, CL_TRUE,
+                                        (const char**)&buffer, &size, &clErr);
+
+    if (clErr != CL_SUCCESS)
+    {
+        printf("opencl_load: could not create program. error: %s\n", clCheckError(clErr));
+        exit(-1);
+    }
+
+    cl_program input_headers[1] = { prhd };
+    const char * input_header_names[1] = { "prhd" };
+
+    clErr = clCompileProgram(
+            prog[0],
+            opencl_device_ct_t,
+            opencl_devices,
+            "-cl-denorms-are-zero "
+            "-cl-fp32-correctly-rounded-divide-sqrt "
+            "-cl-std=CL1.2 "
+            "-Werror "
+          //"-DCONFIG_USE_DOUBLE "
+          //"-cl-opt-disable "
+            ,
+            1, input_headers, input_header_names,
+            NULL, NULL);
+
+    if (clErr != CL_SUCCESS)
+    {
+        printf("opencl_load: could not compile. error: %s\n", clCheckError(clErr));
+        size_t len;
+        char *cbuffer = (char*)calloc(0x10000000, sizeof(char));
+        clGetProgramBuildInfo(prog[0], opencl_devices[opencl_device_id_t], CL_PROGRAM_BUILD_LOG, 0x10000000 * sizeof(char), cbuffer, &len);
+        printf("CL_PROGRAM_BUILD_LOG:\n%s\n", cbuffer);
+        free(cbuffer);
+        exit(-1);
+    }
+
+    *output =
+            clLinkProgram(opencl_context, opencl_device_ct_t, opencl_devices,
+                          "-cl-denorms-are-zero", 1, prog, NULL, NULL, &clErr);
+
+    if (clErr != CL_SUCCESS)
+    {
+        printf("opencl_load: could not link. error: %s\n", clCheckError(clErr));
+        size_t len;
+        char *cbuffer = (char*)calloc(0x10000000, sizeof(char));
+        clGetProgramBuildInfo(*output, opencl_devices[opencl_device_id_t], CL_PROGRAM_BUILD_LOG, 0x10000000 * sizeof(char), cbuffer, &len);
+        printf("CL_PROGRAM_BUILD_LOG:\n%s\n", cbuffer);
+        free(cbuffer);
+        exit(-1);
+    }
+#endif
 }
 
-void opencl_create_kernel(cl_program *program, char *kernelName, cl_kernel *kernel)
+void opencl_create_kernel(cl_program *program, const char *kernelName,
+                          cl_kernel *kernel)
 {
     cl_int clErr;
 
@@ -233,12 +224,136 @@ void opencl_create_kernel(cl_program *program, char *kernelName, cl_kernel *kern
 
     if (clErr)
     {
-        printf("CL: opencl_create_kernel: Could not create kernel %s.\n",
+        printf("opencl_create_kernel: Could not create kernel %s.\n",
                kernelName);
     }
 }
 
-void opencl_kernel(cl_kernel kernel, dim2 globalItemSize, int argc, ...)
+void opencl_init(int *gpus, int ngpus) {
+    opencl_device_ct_t = ngpus;
+
+    cl_native_double_width_s = calloc(ngpus, sizeof(int));
+    cl_native_max_group_size_s = calloc(ngpus, sizeof(int));
+    cl_native_address_bits_s = calloc(ngpus, sizeof(int));
+
+    opencl_devices = (cl_device_id *) calloc((cl_uint)ngpus, sizeof(cl_device_id));
+    opencl_queues = (cl_command_queue *) calloc((cl_uint)ngpus, sizeof(cl_command_queue));
+
+    cl_int clErr;
+
+    // Create OpenCL context from scratch.
+    cl_platform_id clPlatform = 0;
+    cl_uint clNumPlatforms = 0;
+    cl_uint clnumEntries = ngpus;
+
+    cl_props = calloc(3, sizeof(cl_context_properties));
+    cl_props[0] = CL_CONTEXT_PLATFORM;
+    cl_props[1] = 0;
+    cl_props[2] = 0;
+
+    clErr = clGetPlatformIDs(clnumEntries, &clPlatform, &clNumPlatforms);
+
+    if (clErr != CL_SUCCESS) {
+        printf("opencl_init: Could not get platform IDs.\n");
+        exit(-1);
+    }
+
+    cl_uint num = 32;
+    cl_uint all = 0;
+    cl_device_id devices[num];
+    clErr = clGetDeviceIDs(clPlatform, CL_DEVICE_TYPE_GPU, num, devices, &all);
+
+    if (clErr != CL_SUCCESS) {
+        printf("opencl_init: Could not get device IDs.\n");
+        exit(-1);
+    }
+    else {
+        printf("Device IDs: %d\n", all);
+    }
+
+    int i;
+    for(i = 0; i < ngpus; ++i)
+    {
+        opencl_devices[i] = devices[gpus[i]];
+    }
+
+    cl_props[1] = (cl_context_properties) clPlatform;
+
+    opencl_context = clCreateContext(cl_props, ngpus, opencl_devices, NULL, NULL, &clErr);
+
+    if (clErr != CL_SUCCESS) {
+        printf("opencl_init: Could not create context.\n");
+        exit(-1);
+    }
+
+    int d;
+    for (d = 0; d < ngpus; ++d) {
+        opencl_device_id_t = d;
+
+        opencl_queues[opencl_device_id_t] = clCreateCommandQueue(opencl_context,
+                                                                 opencl_devices[opencl_device_id_t], CL_FALSE, &clErr);
+
+        if (clErr != CL_SUCCESS) {
+            printf("opencl_init: Could not create queue.\n");
+            exit(-1);
+        }
+
+        cl_native_double_width_s[opencl_device_id_t] = 0;
+        cl_native_max_group_size_s[opencl_device_id_t] = 0;
+        cl_native_address_bits_s[opencl_device_id_t] = 0;
+
+        clGetDeviceInfo(opencl_devices[opencl_device_id_t], CL_DEVICE_NATIVE_VECTOR_WIDTH_DOUBLE, sizeof(cl_uint), &cl_native_double_width_s[opencl_device_id_t], NULL);
+        clGetDeviceInfo(opencl_devices[opencl_device_id_t], CL_DEVICE_MAX_WORK_GROUP_SIZE, sizeof(size_t), &cl_native_max_group_size_s[opencl_device_id_t], NULL);
+        clGetDeviceInfo(opencl_devices[opencl_device_id_t], CL_DEVICE_ADDRESS_BITS, sizeof(size_t), &cl_native_address_bits_s[opencl_device_id_t], NULL);
+
+#if defined(DARKNET_VERBOSE_GPU)
+        // Print out usefull information.
+        const size_t bufferSize = 2048;
+        char *buffer = (char *) calloc(bufferSize, sizeof(char));
+
+        printf("Device ID: %d\n", gpus[opencl_device_id_t]);
+        clGetDeviceInfo(opencl_devices[opencl_device_id_t], CL_DEVICE_NAME, bufferSize * sizeof(char), buffer, NULL);
+        printf("Device name: %s\n", buffer);
+        clGetDeviceInfo(opencl_devices[opencl_device_id_t], CL_DEVICE_VENDOR, bufferSize * sizeof(char), buffer, NULL);
+        printf("Device vendor: %s\n", buffer);
+        clGetDeviceInfo(opencl_devices[opencl_device_id_t], CL_DEVICE_VERSION, bufferSize * sizeof(char), buffer, NULL);
+        printf("Device opencl availability: %s\n", buffer);
+        clGetDeviceInfo(opencl_devices[opencl_device_id_t], CL_DRIVER_VERSION, bufferSize * sizeof(char), buffer, NULL);
+        printf("Device opencl used: %s\n", buffer);
+        printf("Device double precision: %s\n", cl_native_double_width_s[opencl_device_id_t] == 0 ? "NO" : "YES");
+        printf("Device max group size: %zu\n", cl_native_max_group_size_s[opencl_device_id_t]);
+        printf("Device address bits: %zu\n", cl_native_address_bits_s[opencl_device_id_t]);
+        free(buffer);
+#endif
+    }
+}
+
+void opencl_deinit(int *gpus, int ngpus)
+{
+    int a;
+    int d;
+    for (a = 0, d = ngpus-1; a < ngpus; --d, ++a) {
+        opencl_device_id_t = a;
+
+        clFinish(opencl_queues[opencl_device_id_t]);
+        gpu_index = -1;
+
+        clReleaseCommandQueue(opencl_queues[opencl_device_id_t]);
+
+        // BUG! for Multi-GPU
+        // free(cl_props);
+        clReleaseContext(opencl_context);
+    }
+
+    free(opencl_queues);
+    free(opencl_devices);
+
+    free(cl_native_double_width_s);
+    free(cl_native_max_group_size_s);
+    free(cl_native_address_bits_s);
+}
+
+void opencl_kernel(cl_kernel kernel, const dim2 globalItemSize, const int argc, ...)
 {
     cl_int clErr;
 
@@ -254,19 +369,18 @@ void opencl_kernel(cl_kernel kernel, dim2 globalItemSize, int argc, ...)
         argValue = va_arg(vl, void*);
         argSize = va_arg(vl, size_t);
 
-        assert(argValue);
-
         clErr = clSetKernelArg(kernel, j, argSize, argValue);
 
         if (clErr != CL_SUCCESS)
         {
-            size_t bufferSize = 2048;
+            const size_t bufferSize = 2048;
             char *kernelName = (char*) calloc(bufferSize, sizeof(char));
 
             clGetKernelInfo(kernel, CL_KERNEL_FUNCTION_NAME, bufferSize, kernelName, NULL);
-            printf("CL: opencl_kernel %s could not set kernel argument. error: %s\n", kernelName, clCheckError(clErr));
+            printf("opencl_kernel %s could not set kernel argument. error: %s\n", kernelName, clCheckError(clErr));
 
             free(kernelName);
+            exit(-1);
         }
     }
 
@@ -277,20 +391,111 @@ void opencl_kernel(cl_kernel kernel, dim2 globalItemSize, int argc, ...)
     globalOffser[1] = 0;
     globalItems[0] = globalItemSize.x;
     globalItems[1] = globalItemSize.y;
+    
+    clErr = clEnqueueNDRangeKernel(opencl_queues[opencl_device_id_t], kernel, 2,
+            globalOffser, globalItems, NULL, 0, NULL, NULL);
 
-    clErr = clEnqueueNDRangeKernel(opencl_queue, kernel, 2,
-                                   globalOffser, globalItems, NULL, 0, NULL, NULL);
+    // TODO: MAYBE? :D
+    //clFinish(opencl_queues[opencl_device_id_t]);
 
     if (clErr != CL_SUCCESS)
     {
-        size_t bufferSize = 2048;
+        const size_t bufferSize = 2048;
         char *kernelName = (char*) calloc(bufferSize, sizeof(char));
 
         clGetKernelInfo(kernel, CL_KERNEL_FUNCTION_NAME, bufferSize, kernelName, NULL);
-        printf("CL: opencl %s error: %s\n", kernelName, clCheckError(clErr));
+        printf("opencl %s error: %s\n", kernelName, clCheckError(clErr));
 
         free(kernelName);
+        exit(-1);
     }
+#ifdef DEBUG_KERNELS
+    else {
+        const size_t bufferSize = 2048;
+        char *kernelName = (char*) calloc(bufferSize, sizeof(char));
+        clGetKernelInfo(kernel, CL_KERNEL_FUNCTION_NAME, bufferSize, kernelName, NULL);
+        printf("opencl %s : ", kernelName);
+        free(kernelName);
+        printf("OK \n");
+    }
+#endif
+}
+
+void opencl_kernel_local(cl_kernel kernel, const dim2 globalItemSize, const dim2 localItemSize, const int argc, ...)
+{
+    cl_int clErr;
+
+    va_list vl;
+    va_start(vl, argc);
+
+    size_t argSize = 0;
+    void *argValue = NULL;
+
+    int i, j;
+    for (i = 0, j = 0; i < argc; i+=2, ++j)
+    {
+        argValue = va_arg(vl, void*);
+        argSize = va_arg(vl, size_t);
+
+        // I need NULL to __local arrays
+        // assert(argValue);
+
+        clErr = clSetKernelArg(kernel, j, argSize, argValue);
+
+        if (clErr != CL_SUCCESS)
+        {
+            const size_t bufferSize = 2048;
+            char *kernelName = (char*) calloc(bufferSize, sizeof(char));
+
+            clGetKernelInfo(kernel, CL_KERNEL_FUNCTION_NAME, bufferSize, kernelName, NULL);
+            printf("opencl_kernel %s could not set kernel argument. error: %s\n", kernelName, clCheckError(clErr));
+
+            free(kernelName);
+            exit(-1);
+        }
+    }
+
+    va_end(vl);
+
+    size_t globalOffser[2];
+    globalOffser[0] = 0;
+    globalOffser[1] = 0;
+
+    size_t globalItems[2];
+    globalItems[0] = globalItemSize.x;
+    globalItems[1] = globalItemSize.y;
+
+    size_t localItems[2];
+    localItems[0] = localItemSize.x;
+    localItems[1] = localItemSize.y;
+    
+    clErr = clEnqueueNDRangeKernel(opencl_queues[opencl_device_id_t], kernel, 2,
+                                   globalOffser, globalItems, localItems, 0, NULL, NULL);
+
+    // TODO: MAYBE? :D
+    //clFinish(opencl_queues[opencl_device_id_t]);
+
+    if (clErr != CL_SUCCESS)
+    {
+        const size_t bufferSize = 2048;
+        char *kernelName = (char*) calloc(bufferSize, sizeof(char));
+
+        clGetKernelInfo(kernel, CL_KERNEL_FUNCTION_NAME, bufferSize, kernelName, NULL);
+        printf("opencl %s error: %s\n", kernelName, clCheckError(clErr));
+
+        free(kernelName);
+        exit(-1);
+    }
+#ifdef DEBUG_KERNELS
+    else {
+        const size_t bufferSize = 2048;
+        char *kernelName = (char*) calloc(bufferSize, sizeof(char));
+        clGetKernelInfo(kernel, CL_KERNEL_FUNCTION_NAME, bufferSize, kernelName, NULL);
+        printf("opencl %s : ", kernelName);
+        free(kernelName);
+        printf("OK \n");
+    }
+#endif
 }
 
 cl_mem_ext opencl_make_array(void *x, size_t o, size_t n)
@@ -299,6 +504,8 @@ cl_mem_ext opencl_make_array(void *x, size_t o, size_t n)
 
     buf.len = n;
     buf.obs = o;
+    buf.off = 0;
+    buf.cnt = 0;
 
     buf.ptr = x;
 
@@ -306,64 +513,68 @@ cl_mem_ext opencl_make_array(void *x, size_t o, size_t n)
     buf.org = clCreateBuffer(opencl_context, CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR | CL_MEM_COPY_HOST_PTR,
                              buf.len * buf.obs, buf.ptr, &clErr);
     if (clErr != CL_SUCCESS)
-        printf("CL: could create buffer on device. error: %s\n", clCheckError(clErr));
+        printf("could create buffer on device. error: %s\n", clCheckError(clErr));
 
     buf.mem = buf.org;
-    buf.que = opencl_queue;
+
+    buf.que = opencl_queues[opencl_device_id_t];
 
     return buf;
 }
 
 void opencl_push_array(cl_mem_ext x_gpu, void *x)
 {
-    cl_int clErr;
-
     if (x_gpu.ptr == (void*)x) {
-
-        clErr = clEnqueueWriteBuffer(x_gpu.que, x_gpu.mem, CL_TRUE, 0, x_gpu.len * x_gpu.obs, x, 0, NULL, NULL);
+        cl_int clErr = clEnqueueWriteBuffer(x_gpu.que, x_gpu.mem, CL_TRUE, 0, x_gpu.len * x_gpu.obs, x, 0, NULL, NULL);
         if (clErr != CL_SUCCESS)
-            printf("CL: could not push array to device. error: %s\n", clCheckError(clErr));
-
+            printf("could not push array to device. error: %s\n", clCheckError(clErr));
     } else {
+        cl_int clErr;
         x_gpu.map = clEnqueueMapBuffer(x_gpu.que, x_gpu.org, CL_TRUE, CL_MAP_WRITE,
                                        0, x_gpu.len * x_gpu.obs, 0, NULL, NULL, &clErr);
-
-        if (clErr != CL_SUCCESS)
-            printf("CL: could not map array to device. error: %s\n", clCheckError(clErr));
-
+        if (clErr != CL_SUCCESS) {
+            printf("could not map array to device. error: %s\n", clCheckError(clErr));
+            exit(1);
+        }
         memcpy(x_gpu.map, x, x_gpu.len * x_gpu.obs);
-
         clErr = clEnqueueUnmapMemObject(x_gpu.que, x_gpu.org, x_gpu.map, 0, NULL, NULL);
-
         if (clErr != CL_SUCCESS)
-            printf("CL: could not unmap array from device. error: %s\n", clCheckError(clErr));
+            printf("could not unmap array from device. error: %s\n", clCheckError(clErr));
     }
 }
 
 void opencl_pull_array(cl_mem_ext x_gpu, void *x)
 {
-    cl_int clErr;
-
     if (x_gpu.ptr == (void*)x) {
-
-        clErr = clEnqueueReadBuffer(x_gpu.que, x_gpu.mem, CL_TRUE, 0, x_gpu.len * x_gpu.obs, x, 0, NULL, NULL);
+        cl_int clErr = clEnqueueReadBuffer(x_gpu.que, x_gpu.mem, CL_TRUE, 0, x_gpu.len * x_gpu.obs, x, 0, NULL, NULL);
         if (clErr != CL_SUCCESS)
-            printf("CL: could not pull array from device. error: %s\n", clCheckError(clErr));
-
+            printf("could not pull array from device. error: %s\n", clCheckError(clErr));
     } else {
+        cl_int clErr;
         x_gpu.map = clEnqueueMapBuffer(x_gpu.que, x_gpu.org, CL_TRUE, CL_MAP_READ,
                                        0, x_gpu.len * x_gpu.obs, 0, NULL, NULL, &clErr);
-
-        if (clErr != CL_SUCCESS)
-            printf("CL: could not map array to device. error: %s\n", clCheckError(clErr));
-
+        if (clErr != CL_SUCCESS) {
+            printf("could not map array to device. error: %s\n", clCheckError(clErr));
+            exit(1);
+        }
         memcpy(x, x_gpu.map, x_gpu.len * x_gpu.obs);
-
         clErr = clEnqueueUnmapMemObject(x_gpu.que, x_gpu.org, x_gpu.map, 0, NULL, NULL);
-
         if (clErr != CL_SUCCESS)
-            printf("CL: could not unmap array from device. error: %s\n", clCheckError(clErr));
+            printf("could not unmap array from device. error: %s\n", clCheckError(clErr));
     }
+}
+
+void opencl_dump_mem_stat()
+{
+    size_t used, total;
+
+    clGetDeviceInfo(opencl_devices[opencl_device_id_t], CL_DEVICE_GLOBAL_MEM_SIZE,
+                    sizeof(size_t), &total, NULL);
+
+    clGetDeviceInfo(opencl_devices[opencl_device_id_t], CL_DEVICE_LOCAL_MEM_SIZE,
+                    sizeof(size_t), &used, NULL);
+
+    printf("OpenCL memory status: Used/Free/Total = [%lu]/[%lu]/[%lu]\n", used, total - used, total);
 }
 
 void opencl_free(cl_mem_ext x_gpu)
@@ -371,40 +582,30 @@ void opencl_free(cl_mem_ext x_gpu)
     x_gpu.len = 0;
     x_gpu.obs = 0;
     x_gpu.mem = 0;
+    x_gpu.off = 0;
+    x_gpu.cnt = 0;
     clReleaseMemObject(x_gpu.org);
     x_gpu.org = 0;
     x_gpu.map = 0;
     x_gpu.que = 0;
-    if(!x_gpu.ptr) free(x_gpu.ptr);
+    free(x_gpu.ptr);
     x_gpu.ptr = 0;
 }
 
-void opencl_copy(cl_mem_ext y_gpu, cl_mem_ext x_gpu)
+void opencl_free_gpu_only(cl_mem_ext x_gpu)
 {
-    y_gpu.len = x_gpu.len;
-    y_gpu.obs = x_gpu.obs;
-    y_gpu.mem = x_gpu.mem;
-    y_gpu.org = x_gpu.org;
-    y_gpu.map = x_gpu.map;
-    y_gpu.que = x_gpu.que;
-    y_gpu.ptr = x_gpu.ptr;
+    x_gpu.len = 0;
+    x_gpu.obs = 0;
+    x_gpu.mem = 0;
+    x_gpu.off = 0;
+    x_gpu.cnt = 0;
+    clReleaseMemObject(x_gpu.org);
+    x_gpu.org = 0;
+    x_gpu.map = 0;
+    x_gpu.que = 0;
 }
 
-void opencl_dump_mem_stat(int gpui)
-{
-    size_t used, total;
-
-    clGetDeviceInfo(opencl_devices[gpui], CL_DEVICE_GLOBAL_MEM_SIZE,
-                    sizeof(size_t), &total, NULL);
-
-    clGetDeviceInfo(opencl_devices[gpui], CL_DEVICE_LOCAL_MEM_SIZE,
-                    sizeof(size_t), &used, NULL);
-
-    printf("OpenCL memory status: Used/Free/Total = [%lu]/[%lu]/[%lu]\n", used, total - used, total);
-}
-
-char* clGetErrorString(int errorCode)
-{
+const char* clGetErrorString(int errorCode) {
     switch (errorCode) {
         case 0: return "CL_SUCCESS";
         case -1: return "CL_DEVICE_NOT_FOUND";
@@ -499,7 +700,6 @@ char* clGetErrorString(int errorCode)
     }
 }
 
-char* clCheckError(int errorCode)
-{
+const char* clCheckError(int errorCode) {
     return clGetErrorString(errorCode);
 }

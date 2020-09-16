@@ -78,7 +78,7 @@ void ex03_sub_kernel_init(int gpui) {
             ex03_sub_kernel = calloc(ngpu, sizeof(cl_kernel));
         }
         opencl_load_buffer(ex03_sub_kernel_source, strlen(ex03_sub_kernel_source),
-                           &ex03_sub_kernel_program[d], ngpu, d);
+                           &ex03_sub_kernel_program[d]);
         opencl_create_kernel(&ex03_sub_kernel_program[d], "sub_kernel",
                              &ex03_sub_kernel[d]);
     }

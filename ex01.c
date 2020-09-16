@@ -78,7 +78,7 @@ void ex01_sum_kernel_init(int gpui) {
             ex01_sum_kernel = calloc(ngpu, sizeof(cl_kernel));
         }
         opencl_load_buffer(ex01_sum_kernel_source, strlen(ex01_sum_kernel_source),
-                           &ex01_sum_kernel_program[d], ngpu, d);
+                           &ex01_sum_kernel_program[d]);
         opencl_create_kernel(&ex01_sum_kernel_program[d], "sum_kernel",
                              &ex01_sum_kernel[d]);
     }
