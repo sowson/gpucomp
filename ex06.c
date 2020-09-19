@@ -120,9 +120,9 @@ static const char* const ex06_net_kernel_source = CONVERT_KERNEL_TO_STRING(
 
 void ex06_net_kernel_init(int gpui) {
     // Inint OpenCL
-    int* gpus = calloc(1, sizeof(int));
-    gpus[0] = gpui;
     int ngpu = 1;
+    int* gpus = calloc(ngpu, sizeof(int));
+    gpus[0] = gpui;
     opencl_init(gpus, ngpu);
     free(gpus);
     // Init GPU Computing
@@ -140,9 +140,10 @@ void ex06_net_kernel_init(int gpui) {
 }
 
 void ex06_net_kernel_deinit(int gpui) {
-    int* gpus = calloc(1, sizeof(int));
-    gpus[0] = gpui;
+    // DeInint OpenCL
     int ngpu = 1;
+    int* gpus = calloc(ngpu, sizeof(int));
+    gpus[0] = gpui;
     // DeInit GPU Computing
     int d;
     for (d = 0; d < ngpu; ++d) {

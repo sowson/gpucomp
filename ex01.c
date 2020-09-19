@@ -65,9 +65,9 @@ static const char* const ex01_sum_kernel_source = CONVERT_KERNEL_TO_STRING(
 
 void ex01_sum_kernel_init(int gpui) {
     // Inint OpenCL
-    int* gpus = calloc(1, sizeof(int));
-    gpus[0] = gpui;
     int ngpu = 1;
+    int* gpus = calloc(ngpu, sizeof(int));
+    gpus[0] = gpui;
     opencl_init(gpus, ngpu);
     free(gpus);
     // Init GPU Computing
@@ -90,9 +90,10 @@ void ex01_sum_kernel_init(int gpui) {
 }
 
 void ex01_sum_kernel_deinit(int gpui) {
-    int* gpus = calloc(1, sizeof(int));
-    gpus[0] = gpui;
+    // DeInint OpenCL
     int ngpu = 1;
+    int* gpus = calloc(ngpu, sizeof(int));
+    gpus[0] = gpui;
     // DeInit Mem
     opencl_free(ex01_cl_results);
     opencl_free(ex01_cl_gen_randoms);
